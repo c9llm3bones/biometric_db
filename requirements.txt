@@ -1,6 +1,8 @@
 face_recognition
 numpy
 psycopg2-binary
-pgvector
-librosa  
+pgvector 
 matplotlib
+torchaudio
+speechbrain
+streamlit>=1.25.0

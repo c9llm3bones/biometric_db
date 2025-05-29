@@ -1,7 +1,9 @@
-import cv2
+#import cv2
 import numpy as np
 
 def extract_signature_vector(image_path):
+    pass
+    """
     try:
         # Загрузка изображения
         image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
@@ -20,4 +22,4 @@ def extract_signature_vector(image_path):
         return vector[:128]  # ограничиваем до 128-мерного
     except Exception as e:
         print("Ошибка при обработке почерка:", e)
-        return None
+        return None"""

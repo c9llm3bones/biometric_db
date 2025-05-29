@@ -19,7 +19,6 @@ def extract_speechbrain_vector(audio_path):
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"❌ Файл не найден: {audio_path}")
 
-        # Загрузка модели (в первый раз скачает ~300MB)
         spk_model = EncoderClassifier.from_hparams(
             source="speechbrain/spkrec-ecapa-voxceleb"
         )

@@ -1,0 +1,17 @@
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Registration\Kostya.ogg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Kostya_reg_3.ogg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Ira_1.ogg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Serega_auth.ogg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Registered\Kostya.png
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Registered\Adil_reg.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authorize\Kostya3.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authorize\Kostya2.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authorize\Adil_auth.jpg

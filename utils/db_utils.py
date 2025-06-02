@@ -2,37 +2,279 @@ import psycopg2
 from utils.config import DB_CONFIG, THRESHOLD_VOICE, THRESHOLD_FACE
 from utils import face_utils
 from psycopg2.extras import RealDictCursor
+import bcrypt
+import numpy as np
+from utils.indexer import load_index_and_search
+from utils.config import BIOMETRIC_CONFIG
+import os
+import time
+import json
+def hash_password(plain_password: str):
+    hashed = bcrypt.hashpw(plain_password.encode(), bcrypt.gensalt())
+    return hashed.decode()
+
+def verify_password(plain_password: str, hashed_password: str):
+    return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 def get_db_connection():
     return psycopg2.connect(**DB_CONFIG)
 
-def register_user(full_name, gender, birth_date, consent, file_path, file_type):
+def log_search(subject_id=None, sensor_id=None, sample_id=None, 
+              search_type='face', query_vector_type='face',
+              candidates_found=0, search_time_ms=0.0,
+              threshold_used=0.5, additional_info=None):
+    """
+    Логирует операцию поиска в таблице search_logs
+    """
     try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO search_logs (
+                subject_id, sensor_id, sample_id,
+                search_type, query_vector_type,
+                candidates_found, search_time_ms,
+                threshold_used, additional_info
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (
+            subject_id, sensor_id, sample_id,
+            search_type, query_vector_type,
+            candidates_found, search_time_ms,
+            threshold_used, json.dumps(additional_info) if additional_info else None
+        ))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+        
+    except Exception as e:
+        print(f"Ошибка при записи лога поиска: {e}")
+        return False
+
+
+def recognize_biometric(vector, biometric_type):
+    start_time = time.time()
+    
+    if not vector:
+        log_search(
+            search_type=biometric_type,
+            query_vector_type=biometric_type,
+            candidates_found=0,
+            search_time_ms=0,
+            threshold_used=0,
+            additional_info={"error": "Пустой вектор"}
+        )
+        return []
+
+    config = BIOMETRIC_CONFIG[biometric_type]
+    
+    if not os.path.exists(config['index_file']):
+        log_search(
+            search_type=biometric_type,
+            query_vector_type=biometric_type,
+            candidates_found=0,
+            search_time_ms=0,
+            threshold_used=0,
+            additional_info={"error": "Индексный файл не найден"}
+        )
+        return []
+
+    results = load_index_and_search(config['index_file'], np.array(vector))
+    search_time_ms = (time.time() - start_time) * 1000
+    
+    if not results:
+        log_search(
+            search_type=biometric_type,
+            query_vector_type=biometric_type,
+            candidates_found=0,
+            search_time_ms=search_time_ms,
+            threshold_used=config['threshold'],
+            additional_info={"note": "Нет совпадений"}
+        )
+        return []
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    subject_ids = [str(sid) for sid, _ in results]
+    placeholders = ','.join(['%s'] * len(subject_ids))
+    
+    cursor.execute(f"""
+        SELECT DISTINCT subj.subject_id, subj.login
+        FROM subjects subj
+        JOIN samples s ON subj.subject_id = s.subject_id
+        WHERE subj.subject_id IN ({placeholders}) AND s.status = 'active'
+    """, subject_ids)
+    
+    login_map = {int(sid): login for sid, login in cursor.fetchall()}
+    conn.close()
+    
+    final_results = []
+    for subject_id, distance in results:
+        if distance < config['threshold'] and subject_id in login_map:
+            final_results.append((
+                subject_id,
+                login_map[subject_id],
+                float(distance)
+            ))
+
+    log_search(
+        search_type=biometric_type,
+        query_vector_type=biometric_type,
+        candidates_found=len(final_results),
+        search_time_ms=search_time_ms,
+        threshold_used=config['threshold'],
+        additional_info={
+            "raw_results": len(results),
+            "threshold": config['threshold'],
+            "vector_shape": str(np.array(vector).shape)
+        }
+    )
+    
+    return final_results
+
+def check_dublicate_biometric(subject_id, vector, biometric_type):
+    print('Проверяем наличие похожих образцов')
+    matches = recognize_biometric(vector, biometric_type)
+    if matches:
+        for match_subject_id, _, _ in matches:
+            if match_subject_id != subject_id:
+                return True
+    return False
+
+def update_biometric_vector(subject_id, vector, file_path, biometric_type):
+    try:
+        if check_dublicate_biometric(subject_id, vector, biometric_type):
+            raise Exception("Похожий биометрический образец уже зарегистрирован другим пользователем")
+
+        config = BIOMETRIC_CONFIG[biometric_type]
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            UPDATE samples
+            SET status = 'inactive'
+            WHERE subject_id = %s
+              AND sample_type = %s
+              AND status != 'inactive'
+        """, (subject_id, biometric_type))
+
+        cursor.execute("""
+            INSERT INTO sensors (sensor_name, sensor_type, manufacturer)
+            VALUES (%s, %s, %s) RETURNING sensor_id
+        """, (f'Generic {biometric_type} Sensor', 'camera', 'Generic'))
+        sensor_id = cursor.fetchone()[0]
+
+        cursor.execute("""
+            INSERT INTO samples (subject_id, sensor_id, sample_type, sample_hash, file_path)
+            VALUES (%s, %s, %s, %s, %s) RETURNING sample_id
+        """, (subject_id, sensor_id, biometric_type, str(hash(file_path)), file_path))
+        sample_id = cursor.fetchone()[0]
+
+        insert_query = f"""
+            INSERT INTO {config['samples_table']} (sample_id, {config['vector_column']})
+            VALUES (%s, %s)
+        """
+        cursor.execute(insert_query, (sample_id, str(vector)))
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return True
+
+    except Exception as e:
+        print(f"Ошибка обновления {biometric_type}: {e}")
+        return False
+
+def save_biometric_vector(sample_id, vector, biometric_type):
+    config = BIOMETRIC_CONFIG[biometric_type]
+    return config['save_function'](sample_id, vector)
+
+def update_password(subject_id, new_password):
+    hashed = hash_password(new_password)
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE subjects SET password_hash = %s WHERE subject_id = %s
+        """, (hashed, subject_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return True
+    except Exception as e:
+        print("Ошибка обновления пароля:", e)
+        return False    
+
+def check_current_password(subject_id, plain_password):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT password_hash FROM subjects WHERE subject_id = %s", (subject_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        hashed_password = row[0]
+        return verify_password(plain_password, hashed_password)
+    return False
+
+def add_biometric_sample(subject_id, file_path, biometric_type):
+    try:
+        if check_dublicate_biometric(subject_id, file_path, biometric_type):
+            raise Exception("Похожий биометрический образец уже зарегистрирован другим пользователем")
+        config = BIOMETRIC_CONFIG[biometric_type]
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT INTO sensors (sensor_name, sensor_type, manufacturer)
+            VALUES (%s, %s, %s) RETURNING sensor_id
+        """, (f'Generic {biometric_type} Sensor', 'camera', 'Generic'))
+        sensor_id = cursor.fetchone()[0]
+        
+        
+        cursor.execute("""
+            INSERT INTO samples (subject_id, sensor_id, sample_type, sample_hash, file_path)
+            VALUES (%s, %s, %s, %s, %s) RETURNING sample_id
+        """, (subject_id, sensor_id, biometric_type, str(hash(file_path)), file_path))
+        sample_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return sample_id
+    except Exception as e:
+        print("Ошибка при добавлении образца биометрии:", e)
+        return None
+
+def register_user(full_name, gender, login, password, file_path, biometric_type, vector):
+    try:
+        if check_dublicate_biometric(None, vector, biometric_type):
+            raise Exception("Похожий биометрический образец уже зарегистрирован другим пользователем")
+        config = BIOMETRIC_CONFIG[biometric_type]
         conn = get_db_connection()
         cursor = conn.cursor()
 
         # Добавляем субъекта
         cursor.execute("""
-            INSERT INTO subjects (full_name, gender, birth_date, consent)
+            INSERT INTO subjects (full_name, gender, login, password_hash)
             VALUES (%s, %s, %s, %s) RETURNING subject_id
-        """, (full_name, gender, birth_date, consent))
+        """, (full_name, gender, login, hash_password(password)))
         subject_id = cursor.fetchone()[0]
 
-        # Добавляем сенсор (например, веб-камера)
+        # Добавляем сенсор
         cursor.execute("""
             INSERT INTO sensors (sensor_name, sensor_type, manufacturer)
-            VALUES ('Web Camera', 'webcam', 'Generic') RETURNING sensor_id
-        """)
+            VALUES (%s, %s, %s) RETURNING sensor_id
+        """, (f'Generic {biometric_type} Sensor', 'camera', 'Generic'))
         sensor_id = cursor.fetchone()[0]
-
-        # Хэш файла (упрощённый)
-        sample_hash = hash(file_path)
 
         # Добавляем образец
         cursor.execute("""
             INSERT INTO samples (subject_id, sensor_id, sample_type, sample_hash, file_path)
             VALUES (%s, %s, %s, %s, %s) RETURNING sample_id
-        """, (subject_id, sensor_id, file_type, str(sample_hash), file_path))
+        """, (subject_id, sensor_id, biometric_type, str(hash(file_path)), file_path))
         sample_id = cursor.fetchone()[0]
 
         conn.commit()
@@ -43,6 +285,24 @@ def register_user(full_name, gender, birth_date, consent, file_path, file_type):
     except Exception as e:
         print("Ошибка при регистрации:", e)
         return None
+
+def get_subject_by_login(login):
+    """Получить subject_id по имени"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT subject_id FROM subjects WHERE login = %s", (login,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
+
+def get_sample_id(subject_id):
+    """Получить sample_id по subject_id"""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT sample_id FROM samples WHERE subject_id = %s LIMIT 1", (subject_id,))
+    result = cursor.fetchone()
+    conn.close()
+    return result[0] if result else None
 
 def save_face_vector(sample_id, vector):
     try:
@@ -65,114 +325,6 @@ def save_face_vector(sample_id, vector):
         print("Ошибка при сохранении вектора:", e)
         return False
 
-def recognize_face(vector):
-
-    if not vector:
-        return []
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        SELECT subj.full_name, fs.feature_vector <-> %s AS similarity
-        FROM face_samples fs
-        JOIN samples s ON fs.sample_id = s.sample_id
-        JOIN subjects subj ON s.subject_id = subj.subject_id
-        ORDER BY similarity ASC
-        LIMIT 5
-    """, (str(vector),))
-
-    results = cursor.fetchall()
-    conn.close()
-    print(*[(name, sim) for name, sim in results])
-    return [(name, sim) for name, sim in results if sim < THRESHOLD_FACE]
-
-def get_subject_by_name(full_name):
-    """Получить subject_id по имени"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT subject_id FROM subjects WHERE full_name = %s", (full_name,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else None
-
-def get_sample_id(subject_id):
-    """Получить sample_id по subject_id"""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT sample_id FROM samples WHERE subject_id = %s LIMIT 1", (subject_id,))
-    result = cursor.fetchone()
-    conn.close()
-    return result[0] if result else None
-
-def update_face_vector(sample_id, image_path):
-    """Обновить вектор и путь к изображению"""
-    from face_utils import get_face_vector
-
-    vector = get_face_vector(image_path)
-    if not vector:
-        return False
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Обновляем путь в samples
-        cursor.execute("""
-            UPDATE samples 
-            SET file_path = %s 
-            WHERE sample_id = %s
-        """, (image_path, sample_id))
-
-        # Обновляем вектор в face_samples
-        cursor.execute("""
-            UPDATE face_samples 
-            SET feature_vector = %s 
-            WHERE sample_id = %s
-        """, (str(vector), sample_id))
-
-        conn.commit()
-        conn.close()
-        return True
-    except Exception as e:
-        print("Ошибка при обновлении:", e)
-        return False
-    
-def register_signature(subject_id, signature_path):
-    """
-    Регистрация образца подписи в БД
-    :param subject_id: идентификатор пользователя
-    :param signature_path: путь к фото подписи
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            INSERT INTO sensors (sensor_name, sensor_type, manufacturer)
-            VALUES ('', '', '')
-            RETURNING sample_id
-        """)
-        sensor_id = cursor.fetchone()[0]
-        sample_hash = hash(signature_path)
-
-        cursor.execute("""
-            INSERT INTO samples (
-                subject_id, sensor_id, sample_type, sample_hash, file_path
-            ) VALUES (%s, %s, 'signature', %s, %s)
-            RETURNING sample_id
-        """, (subject_id, sensor_id, str(sample_hash), signature_path))
-        sample_id = cursor.fetchone()[0]
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        return sample_id
-    except Exception as e:
-        print("Ошибка при регистрации подписи")
-        return None
-    
 def save_signature_vector(sample_id, vector, stroke_speed=None):
     """
     Сохраняет вектор почерка в БД
@@ -199,127 +351,6 @@ def save_signature_vector(sample_id, vector, stroke_speed=None):
     except Exception as e:
         print("Ошибка при сохранении вектора почерка:", e)
         return False
-    
-def recognize_signature(vector, threshold=0.6):
-    """
-    Поиск по векторам почерка
-    :param vector: вектор почерка
-    :param threshold: порог схожести
-    :return: список совпадений
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT subj.full_name, ss.signature_vector <-> %s AS similarity
-            FROM signature_samples ss
-            JOIN samples s ON ss.sample_id = s.sample_id
-            JOIN subjects subj ON s.subject_id = subj.subject_id
-            ORDER BY similarity ASC
-            LIMIT 5
-        """, (str(vector),))
-
-        results = cursor.fetchall()
-        conn.close()
-
-        return [(name, sim) for name, sim in results if sim < threshold]
-
-    except Exception as e:
-        print("Ошибка при распознавании почерка:", e)
-        return []
-    
-def update_signature_vector(sample_id, vector):
-    """
-    Обновляет вектор почерка
-    :param sample_id: идентификатор образца
-    :param vector: новый вектор
-    :return: True/False
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            UPDATE signature_samples
-            SET signature_vector = %s
-            WHERE sample_id = %s
-        """, (str(vector), sample_id))
-
-        conn.commit()
-        conn.close()
-        return True
-
-    except Exception as e:
-        print("Ошибка при обновлении вектора почерка:", e)
-        return False
-
-def update_signature_file(sample_id, new_file_path):
-    """
-    Обновляет путь к файлу подписи
-    :param sample_id: идентификатор образца
-    :param new_file_path: новый путь
-    :return: True/False
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            UPDATE samples
-            SET file_path = %s
-            WHERE sample_id = %s
-        """, (new_file_path, sample_id))
-
-        conn.commit()
-        conn.close()
-        return True
-
-    except Exception as e:
-        print("Ошибка при обновлении пути к подписи:", e)
-        return False
-
-def register_voice(subject_id, voice_path, voice_text):
-    """
-    Регистрация голосового образца в БД
-    :param subject_id: идентификатор пользователя
-    :param voice_path: путь к аудиофайлу
-    :param voice_text: произнесенный текст
-    :return: True/False
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        # Добавляем сенсор (микрофон)
-        cursor.execute("""
-            INSERT INTO sensors (sensor_name, sensor_type, manufacturer)
-            VALUES ('Generic Microphone', 'mic', 'Generic')
-            RETURNING sensor_id
-        """)
-        sensor_id = cursor.fetchone()[0]
-
-        # Хэшируем файл
-        sample_hash = hash(voice_path)
-
-        # Добавляем образец
-        cursor.execute("""
-            INSERT INTO samples (
-                subject_id, sensor_id, sample_type, sample_hash, file_path
-            ) VALUES (%s, %s, 'voice', %s, %s)
-            RETURNING sample_id
-        """, (subject_id, sensor_id, str(sample_hash), voice_path))
-        sample_id = cursor.fetchone()[0]
-
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-        return sample_id
-
-    except Exception as e:
-        print("Ошибка при регистрации голоса:", e)
-        return None
 
 def save_voice_vector(sample_id, vector, sampling_rate=16000, audio_format='wav'):
     """
@@ -344,57 +375,6 @@ def save_voice_vector(sample_id, vector, sampling_rate=16000, audio_format='wav'
         print("Ошибка при сохранении вектора голоса:", e)
         return False
 
-def recognize_voice(vector):
-    """
-    Поиск по голосовым векторам (192-мерный)
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT subj.full_name, vs.audio_vector <-> %s AS similarity
-            FROM voice_samples vs
-            JOIN samples s ON vs.sample_id = s.sample_id
-            JOIN subjects subj ON s.subject_id = subj.subject_id
-            ORDER BY similarity ASC
-            LIMIT 5
-        """, (str(vector),))
-
-        results = cursor.fetchall()
-        conn.close()
-        print([(name, sim) for name, sim in results])
-        return [(name, sim) for name, sim in results if sim < THRESHOLD_VOICE]  # порог схожести
-
-    except Exception as e:
-        print("❌ Ошибка поиска по голосу:", e)
-        return []
-    
-def update_voice_vector(sample_id, vector):
-    """
-    Обновляет вектор голоса
-    :param sample_id: идентификатор образца
-    :param vector: новый вектор
-    :return: True/False
-    """
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            UPDATE voice_samples
-            SET audio_vector = %s
-            WHERE sample_id = %s
-        """, (str(vector), sample_id))
-
-        conn.commit()
-        conn.close()
-        return True
-
-    except Exception as e:
-        print("Ошибка при обновлении голоса:", e)
-        return False
-    
-
 def get_all_users_with_biometrics():
     try:
         # Подключение к базе данных с использованием RealDictCursor для именованных полей
@@ -407,8 +387,7 @@ def get_all_users_with_biometrics():
                 s.subject_id,
                 s.full_name,
                 s.gender,
-                s.birth_date,
-                s.consent,
+                s.login,
                 samp.sample_id,
                 samp.sample_type,
                 samp.file_path,
@@ -425,7 +404,7 @@ def get_all_users_with_biometrics():
                 ss.stroke_speed,
                 ss.signature_vector
             FROM subjects s
-            LEFT JOIN samples samp ON s.subject_id = samp.subject_id
+            LEFT JOIN samples samp ON s.subject_id = samp.subject_id AND samp.status = 'active'
             LEFT JOIN face_samples fs ON samp.sample_id = fs.sample_id
             LEFT JOIN voice_samples vs ON samp.sample_id = vs.sample_id
             LEFT JOIN signature_samples ss ON samp.sample_id = ss.sample_id
@@ -447,8 +426,7 @@ def get_all_users_with_biometrics():
                     'subject_id': subject_id,
                     'full_name': row['full_name'],
                     'gender': row['gender'],
-                    'birth_date': row['birth_date'],
-                    'consent': row['consent'],
+                    'login': row['login'],
                     'biometrics': []
                 }
             

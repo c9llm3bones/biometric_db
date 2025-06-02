@@ -6,3 +6,5 @@ matplotlib
 torchaudio
 speechbrain
 streamlit>=1.25.0
+gradio
+bcrypt

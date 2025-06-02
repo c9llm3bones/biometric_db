@@ -1,0 +1,51 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+
+# Distribution / packaging
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environment files
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# VS Code and other IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs and runtime files
+*.log
+*.pid
+*.csv
+# Pickle and serialized data
+*.pkl
+*.joblib
+
+# Dataset artifacts
+dataset/*.npy
+dataset/*.npz
+dataset/*.pkl
+dataset/*.h5
+dataset/*.zip
+dataset/*.tar.gz
+
+# DB dumps / local state
+*.sqlite3
+*.db
+
+# OS / Misc
+.DS_Store
+Thumbs.db
+
+# Jupyter notebooks checkpoints (if ever used)
+.ipynb_checkpoints/

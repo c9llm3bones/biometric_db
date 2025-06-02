@@ -7,7 +7,7 @@ import numpy as np
 def normalize_vector(vector):
     """Нормализация вектора до единичной длины"""
     return vector / np.linalg.norm(vector)
-
+    
 def extract_speechbrain_vector(audio_path):
     """
     Извлекает 192-мерный вектор голоса через SpeechBrain (spkrec-ecapa-voxceleb)
@@ -91,3 +91,8 @@ def extract_audio_vector(audio_path):
         return "[" + ",".join(f"{x:.10f}" for x in vector) + "]"
     else:
         return None
+
+m1 = extract_audio_vector("dataset/voices/Registration/Kostya_reg_3.wav")
+m2 = extract_audio_vector("dataset/voices/Registration/Kostya_reg_2.wav")
+print(len(m1))
+print(len(m2))

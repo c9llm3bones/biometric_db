@@ -12,7 +12,7 @@ def fetch_all_logs():
     """Получить все логи"""
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM audit_logs ORDER BY changed_at DESC")
+    cursor.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC")
     logs = cursor.fetchall()
     conn.close()
     return logs
@@ -23,8 +23,8 @@ def filter_logs_by_date(start_date: str, end_date: str):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT * FROM audit_logs
-        WHERE changed_at BETWEEN %s AND %s
-        ORDER BY changed_at DESC
+        WHERE timestamp BETWEEN %s AND %s
+        ORDER BY timestamp DESC
     """, (start_date, end_date))
     logs = cursor.fetchall()
     conn.close()
@@ -37,7 +37,7 @@ def filter_logs_by_table(table_name: str):
     cursor.execute("""
         SELECT * FROM audit_logs
         WHERE table_name = %s
-        ORDER BY changed_at DESC
+        ORDER BY timestamp DESC
     """, (table_name,))
     logs = cursor.fetchall()
     conn.close()
@@ -50,7 +50,7 @@ def filter_logs_by_user(user: str):
     cursor.execute("""
         SELECT * FROM audit_logs
         WHERE changed_by = %s
-        ORDER BY changed_at DESC
+        ORDER BY timestamp DESC
     """, (user,))
     logs = cursor.fetchall()
     conn.close()

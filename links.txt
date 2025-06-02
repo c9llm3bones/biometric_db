@@ -1,6 +1,6 @@
 C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Registration\Kostya.ogg
 
-C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Kostya_reg_3.ogg
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Kostya_reg_2.ogg
 
 C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Ira_1.ogg
 

@@ -1,5 +1,3 @@
-# log_utils.py
-
 import psycopg2
 from utils.config import DB_CONFIG
 import json
@@ -72,7 +70,7 @@ def export_logs_to_csv(logs, filename="audit_export.csv"):
                 json.dumps(log[4], ensure_ascii=False),
                 log[5], log[6]
             ])
-    print(f"✅ Логи экспортированы в {filename}")
+    print(f"Логи экспортированы в {filename}")
 
 def analyze_user_activity():
     """Анализ активности пользователей"""

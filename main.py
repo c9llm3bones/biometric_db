@@ -192,7 +192,7 @@ def biometric_login(biometric_type, extract_func):
     print(file_path)
     vector = extract_func(file_path)
     if not vector:
-        print(f"❌ Не удалось извлечь вектор из {biometric_type}")
+        print(f"Не удалось извлечь вектор из {biometric_type}")
         return
     print("Вектор извлечён")
 #/home/kostya/biometric_course_work/dataset/faces/Authorize/Ira2.jpg
@@ -310,8 +310,7 @@ def change_password(current_user_id):
     else:
         print("Ошибка при изменении пароля")
 
-#TODO: implement index search and abillity to update biometry after login
-#TODO: add a simple registration and login with password
+#TODO: fix voice and signature
 
 def main():
     while True:

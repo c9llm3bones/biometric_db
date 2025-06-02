@@ -1,4 +1,3 @@
--- Удаление существующих таблиц (если есть)
 DROP TABLE IF EXISTS 
     audit_logs,
     face_samples,

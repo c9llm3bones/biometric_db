@@ -5,9 +5,9 @@ DB_CONFIG = {
     "host": "localhost"
 }
 
-THRESHOLD_FACE = 0.5 # -> 0, при "Схожесть" -> inf
-THRESHOLD_VOICE = 0.8
-THRESHOLD_SIGNATURE = 0.5
+THRESHOLD_FACE = 0.06 # -> 0, при "Схожесть" -> inf
+THRESHOLD_VOICE = 0.25 # -> 0, при "Схожесть" -> inf
+THRESHOLD_SIGNATURE = 0.1 # -> 0, при "Схожесть" -> inf
 
 BIOMETRIC_CONFIG = {
     'face': {

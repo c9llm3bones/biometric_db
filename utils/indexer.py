@@ -1,21 +1,11 @@
-import os
 import pickle
 from typing import List
-
 import numpy as np
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans
-
-# Database configuration
-DB_CONFIG = {
-    'host': 'localhost',
-    'port': 5432,
-    'dbname': 'biometrics_db',
-    'user': 'postgres',
-    'password': '123456'
-}
+from utils.config import DB_CONFIG
 
 # IVF index parameters
 N_CLUSTERS = 1
@@ -25,20 +15,7 @@ TOP_K = 5
 def get_db_connection():
     return psycopg2.connect(**DB_CONFIG)
 
-
 def fetch_vectors(table_name: str, vector_column: str):
-    """
-    Fetch active feature vectors from the database, tied to subject_id.
-
-    Args:
-        table_name: Name of the table containing vectors (face_samples, voice_samples, etc.)
-        vector_column: Name of the column containing JSONB/array vector data
-
-    Returns:
-        Tuple:
-            - List of subject IDs
-            - Numpy array of shape (N, D) with vectors
-    """
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -69,19 +46,6 @@ def fetch_vectors(table_name: str, vector_column: str):
 
 
 class IVFIndex:
-    """
-    Simplified IVFFlat (Inverted File Index) implementation for vector similarity search.
-
-    The index uses k-means clustering to partition the vector space and creates inverted
-    lists mapping cluster IDs to their member vectors. During search, only the vectors
-    in the nearest clusters are considered as candidates.
-
-    Args:
-        n_clusters: Number of clusters for k-means
-        n_probe: Number of nearest clusters to search
-        top_k: Number of nearest neighbors to return
-    """
-
     def __init__(self, n_clusters: int = 100, n_probe: int = 5, top_k: int = 5):
         self.n_clusters = n_clusters
         self.n_probe = n_probe
@@ -93,13 +57,6 @@ class IVFIndex:
         self.vectors = None
 
     def fit(self, ids: List[int], vectors: np.ndarray):
-        """
-        Train the index on the provided vectors.
-
-        Args:
-            ids: List of sample IDs
-            vectors: Array of shape (N, D) containing the vectors to index
-        """
         if len(ids) == 0:
             raise ValueError("No vectors provided for training.")
 
@@ -117,22 +74,13 @@ class IVFIndex:
             self.inverted_lists[label].append((sid, vec))
 
     def search(self, query_vector: np.ndarray):
-        """
-        Search for nearest neighbors of the query vector.
-
-        Args:
-            query_vector: Query vector to search for
-
-        Returns:
-            List of tuples (sample_id, distance) for the top_k nearest neighbors
-        """
         if self.kmeans is None:
             raise ValueError("Index not trained. Call fit() first.")
         print('vector:', query_vector)
         print('vector dimensions:', query_vector.shape)
         q = query_vector.reshape(1, -1)
         print('index dimensions:', self.kmeans.cluster_centers_.shape)
-        centroid_dists = cdist(q, self.kmeans.cluster_centers_, metric='euclidean')[0]
+        centroid_dists = cdist(q, self.kmeans.cluster_centers_, metric='cosine')[0]
         closest_clusters = np.argsort(centroid_dists)[:self.n_probe]
 
         candidates = []
@@ -144,7 +92,7 @@ class IVFIndex:
 
         cands_vecs = np.array([vec for (_, vec) in candidates])
         cands_ids = [sid for (sid, _) in candidates]
-        dists = cdist(q, cands_vecs, metric='euclidean')[0]
+        dists = cdist(q, cands_vecs, metric='cosine')[0]
 
         nearest_idx = np.argsort(dists)[:self.top_k]
         results = [(cands_ids[i], float(dists[i])) for i in nearest_idx]
@@ -152,12 +100,6 @@ class IVFIndex:
         return results
 
     def save(self, filepath: str):
-        """
-        Save the index to a file.
-
-        Args:
-            filepath: Path where to save the index
-        """
         with open(filepath, 'wb') as f:
             pickle.dump({
                 'n_clusters': self.n_clusters,
@@ -171,15 +113,6 @@ class IVFIndex:
 
     @classmethod
     def load(cls, filepath: str):
-        """
-        Load an index from a file.
-
-        Args:
-            filepath: Path to the saved index file
-
-        Returns:
-            Loaded IVFIndex instance
-        """
         with open(filepath, 'rb') as f:
             data = pickle.load(f)
         obj = cls(n_clusters=data['n_clusters'], n_probe=data['n_probe'], top_k=data['top_k'])
@@ -198,16 +131,6 @@ def update_index(table_name, vector_column, index_path):
     print("Индекс успешно обновлен")
 
 def load_index_and_search(index_path: str, query_vector: np.ndarray):
-    """
-    Load an index and search for nearest neighbors.
-
-    Args:
-        index_path: Path to the saved index file
-        query_vector: Query vector to search for
-
-    Returns:
-        List of tuples (sample_id, distance) for nearest neighbors
-    """
     print(f"Загрузка индекса из {index_path}...")
     index = IVFIndex.load(index_path)
     print("Индекс загружен")

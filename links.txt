@@ -1,10 +1,12 @@
-C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Registration\Kostya.ogg
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Registration\Kostya_reg_2.wav
 
-C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Kostya_reg_2.ogg
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Registration\Kostya_reg_3.wav
 
-C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Ira_1.ogg
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Kostya_reg_2.wav
 
-C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Authorization\Serega_auth.ogg
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Registration\Ira_1.wav
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\voices\Registration\Serega_auth.wav
 
 C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Registered\Kostya.png
 
@@ -15,3 +17,17 @@ C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authori
 C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authorize\Kostya2.jpg
 
 C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authorize\Adil_auth.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authorize\olesya_auth.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Registered\olesya_reg.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\faces\Authorize\bushido.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\signatures\Registered\ira_sign.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\signatures\Registered\kostya_sign.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\signatures\Authorized\ira_sign.jpg
+
+C:\Users\Kostya\Desktop\biometrics_coursework\biometric_db\dataset\signatures\Authorized\kostya_sign.jpg

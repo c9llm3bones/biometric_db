@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 from utils import db_utils as dbu
 from utils import log_utils as lu
 from utils import voice_utils as vu
@@ -119,7 +118,6 @@ def register_biometric(biometric_type, extract_func, save_func, sensor_type='cam
         print("Файл не найден")
         return
 
-    # Проверка формата файла
     if biometric_type == 'face' and not file_path.lower().endswith(('.jpg', '.jpeg', '.png')):
         print("Лицо: поддерживаемые форматы — JPG, JPEG, PNG")
         return
@@ -133,7 +131,6 @@ def register_biometric(biometric_type, extract_func, save_func, sensor_type='cam
     print("\nОбработка...")
 
 
-    # Извлечение вектора
     vector = extract_func(file_path)
 
     if vector is None or len(vector) == 0:
@@ -143,25 +140,22 @@ def register_biometric(biometric_type, extract_func, save_func, sensor_type='cam
     #/home/kostya/biometric_course_work/dataset/faces/Authorize/Ira2.jpg
     
     if subject_id is None:
-        # Регистрация нового пользователя
         sample_id = dbu.register_user(full_name, gender, login, password, file_path, biometric_type, vector)
     else:
-        # Добавление биометрии существующему пользователю
-        sample_id = dbu.add_biometric_sample(subject_id, file_path, biometric_type)
+        sample_id = dbu.add_biometric_sample(subject_id, file_path, vector, biometric_type)
     if not sample_id:
         print("Ошибка регистрации пользователя")
         return
-    # Сохранение биометрии
     if save_func(sample_id, vector):
         print(f"{biometric_type.capitalize()} успешно зарегистрирован")
     else:
         print(f"Ошибка регистрации {biometric_type}")
-    
     update_index(
         config['samples_table'],
         config['vector_column'],
         config['index_file']
     )
+
 
 def biometric_login(biometric_type, extract_func):
     """
@@ -177,7 +171,6 @@ def biometric_login(biometric_type, extract_func):
         print("Файл не найден")
         return
 
-    # Проверка формата файла
     if biometric_type == 'face' and not file_path.lower().endswith(('.jpg', '.jpeg', '.png')):
         print("Лицо: поддерживаемые форматы — JPG, JPEG, PNG")
         return
@@ -201,7 +194,7 @@ def biometric_login(biometric_type, extract_func):
     if matches:
         print("Найдено совпадение:")
         for id, name, sim in matches:
-            print(f" - {name} (сходство: {1 - sim:.2f}%)")
+            print(f" - {name}")
         current_user_id = matches[0][0] 
         current_user_name = matches[0][1]
         user_menu(current_user_id, current_user_name)
@@ -245,7 +238,6 @@ def update_biometric(bio_type, extract_func, current_user_id):
     config = BIOMETRIC_CONFIG[bio_type]
     file_path = input_with_prompt(f"Введите путь к новому файлу ({bio_type})")
     print(f"current_user_id: {current_user_id}")
-    # Проверка файла
     if not os.path.exists(file_path):
         print("Файл не найден")
         return
@@ -256,7 +248,6 @@ def update_biometric(bio_type, extract_func, current_user_id):
         print(f"Не удалось извлечь вектор из {bio_type}")
         return
     
-    # Обновление в БД
     if dbu.update_biometric_vector(current_user_id, vector, file_path, bio_type):
         print(f"{bio_type.capitalize()} успешно обновлен")
     else:
@@ -269,12 +260,31 @@ def update_biometric(bio_type, extract_func, current_user_id):
     )
 
 def add_biometric(current_user_id):
-    print("\nДоступные типы биометрии:")
-    print("1. Лицо")
-    print("2. Голос")
-    print("3. Подпись")
-    choice = input("Выберите тип (1-3): ").strip()
-    
+    missing = dbu.check_available_biometrics(current_user_id)
+    if not missing:
+        print("У вас уже добавлены все три типа биометрии: лицо, голос и подпись.")
+        return
+
+    menu_map = {
+        '1': 'face',
+        '2': 'voice',
+        '3': 'signature'
+    }
+
+    print("\nДоступные для добавления типы биометрии:")
+    if 'face' in missing:
+        print("1. Лицо")
+    if 'voice' in missing:
+        print("2. Голос")
+    if 'signature' in missing:
+        print("3. Подпись")
+
+    choice = input("Выберите тип (укажите номер): ").strip()
+    biometric_type = menu_map.get(choice)
+
+    if biometric_type not in missing:
+        print("Неверный выбор или этот тип биометрии уже добавлен.")
+        return
     if choice == '1':
         register_biometric('face', fu.extract_face_vector, dbu.save_face_vector, 'camera', current_user_id)
         config = BIOMETRIC_CONFIG['face']
@@ -291,6 +301,7 @@ def add_biometric(current_user_id):
         config['vector_column'],
         config['index_file']
     )
+    print("Биометрия успешно добавлена")
 
 def change_password(current_user_id):
     current_pass = input_with_prompt("Введите текущий пароль")

@@ -1,6 +1,5 @@
 import psycopg2
-from utils.config import DB_CONFIG, THRESHOLD_VOICE, THRESHOLD_FACE
-from utils import face_utils
+from utils.config import DB_CONFIG
 from psycopg2.extras import RealDictCursor
 import bcrypt
 import numpy as np
@@ -9,6 +8,7 @@ from utils.config import BIOMETRIC_CONFIG
 import os
 import time
 import json
+
 def hash_password(plain_password: str):
     hashed = bcrypt.hashpw(plain_password.encode(), bcrypt.gensalt())
     return hashed.decode()
@@ -53,6 +53,30 @@ def log_search(subject_id=None, sensor_id=None, sample_id=None,
         print(f"Ошибка при записи лога поиска: {e}")
         return False
 
+def check_available_biometrics(subject_id):
+    ALL_TYPES = {'face', 'voice', 'signature'}
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT DISTINCT sample_type
+            FROM samples
+            WHERE subject_id = %s
+              AND status = 'active';
+            """,
+            (subject_id,)
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        present_types = {row[0] for row in rows if row[0] is not None}
+        missing = list(ALL_TYPES - present_types)
+        return missing
+
+    except Exception as e:
+        print(f"Ошибка при проверке доступных биометрических образцов: {e}")
+        return []
 
 def recognize_biometric(vector, biometric_type):
     start_time = time.time()
@@ -83,7 +107,6 @@ def recognize_biometric(vector, biometric_type):
 
     results = load_index_and_search(config['index_file'], np.array(vector))
     search_time_ms = (time.time() - start_time) * 1000
-    
     if not results:
         log_search(
             search_type=biometric_type,
@@ -219,9 +242,9 @@ def check_current_password(subject_id, plain_password):
         return verify_password(plain_password, hashed_password)
     return False
 
-def add_biometric_sample(subject_id, file_path, biometric_type):
+def add_biometric_sample(subject_id, file_path, vector, biometric_type):
     try:
-        if check_dublicate_biometric(subject_id, file_path, biometric_type):
+        if check_dublicate_biometric(subject_id, vector, biometric_type):
             raise Exception("Похожий биометрический образец уже зарегистрирован другим пользователем")
         config = BIOMETRIC_CONFIG[biometric_type]
         conn = get_db_connection()

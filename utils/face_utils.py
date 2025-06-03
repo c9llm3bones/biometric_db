@@ -1,7 +1,7 @@
 import face_recognition
 
 def extract_face_vector(image_path):
-    print("loading image:", image_path)
+    #print("loading image:", image_path)
     try:
         image = face_recognition.load_image_file(image_path)
         face_locations = face_recognition.face_locations(image)

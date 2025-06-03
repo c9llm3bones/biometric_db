@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS signature_samples (
     sample_id             INT PRIMARY KEY REFERENCES samples(sample_id) ON DELETE CASCADE,
     signature_image_path  TEXT NOT NULL,
     stroke_speed         FLOAT,
-    signature_vector     JSONB,   -- или ARRAY(128)
+    signature_vector     JSONB,   -- или ARRAY(256)
     stroke_count         INT
 );
 
@@ -136,7 +136,7 @@ CREATE TABLE IF NOT EXISTS search_logs (
     sensor_id          INT          REFERENCES sensors(sensor_id)  ON DELETE SET NULL,
     sample_id          INT          REFERENCES samples(sample_id)  ON DELETE SET NULL,
     search_type        VARCHAR(20)  NOT NULL CHECK (search_type IN ('face','voice','signature')),
-    query_vector_type  VARCHAR(20)  NOT NULL CHECK (query_vector_type IN ('face','audio','signature')),
+    query_vector_type  VARCHAR(20)  NOT NULL CHECK (query_vector_type IN ('face','voice','signature')),
     candidates_found   INT          NOT NULL,
     search_time_ms     FLOAT        NOT NULL,
     threshold_used     FLOAT        NOT NULL,
